@@ -17,7 +17,7 @@ LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 #define STRIP_NODE  DT_ALIAS(led_strip)
 #define STRIP_NUM_PIXELS DT_PROP(DT_ALIAS(led_strip), chain_length)
 
-#define UPDATE_DELAY K_MSEC(500) /* in ms */
+#define UPDATE_DELAY K_MSEC(50) /* in ms */
 
 #define RGB(_r, _g, _b) { .r = (_r), .g = (_g), .b = (_b) }
 
