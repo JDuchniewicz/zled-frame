@@ -8,6 +8,8 @@
 
 # build
 /build*
+/app/build*
 /twister-out*
+compile_commands.json
 
 __pycache__/
