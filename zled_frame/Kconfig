@@ -10,6 +10,6 @@ menu "Zephyr"
 source "Kconfig.zephyr"
 endmenu
 
-module = APP
-module-str = APP
+module = ZLED_FRAME
+module-str = ZLED_FRAME
 source "subsys/logging/Kconfig.template.log_config"

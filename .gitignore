@@ -8,7 +8,7 @@
 
 # build
 /build*
-/app/build*
+/zled_frame/build*
 /twister-out*
 compile_commands.json
 

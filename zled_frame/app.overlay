@@ -28,6 +28,10 @@
         };
 };
 
+&wifi {
+    status = "okay";
+};
+
 / {
         aliases {
                 led-strip = &led_strip;
