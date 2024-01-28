@@ -56,9 +56,9 @@ static endpoint_t valid_endpoints[NUMBER_OF_ENDPOINTS] = {
 	{"/api/image", POST},
 };
 
-#define MAX_IMAGE_SIZE (16 * 16 * 3 * sizeof(uint8_t))
-static char received_image[MAX_IMAGE_SIZE];
+char received_image[MAX_IMAGE_SIZE];
 static size_t rcv_img_offset;
+K_SEM_DEFINE(image_semaphore, 0, 1);
 
 void event_handler(struct net_mgmt_event_callback *cb,
 				   uint32_t mgmt_event, struct net_if *iface)
@@ -206,6 +206,14 @@ static int handle_endpoint(int client, char *endpoint_buf, method_t method, char
 			// TODO: also skip the header part and only get the raw data
 			// TODO: where should it be placed?
 			rcv_img_offset = 0;
+
+			// Give the semaphore to notify that a new image is ready
+			k_sem_give(&image_semaphore);
+
+			// sleep a short amount so that the waiting thread can read the data - TODO: make it cleaner
+			k_sleep(K_MSEC(20));
+			// Wait for the image to be processed
+			k_sem_take(&image_semaphore, K_FOREVER);
 			return 0;
 		}
 
