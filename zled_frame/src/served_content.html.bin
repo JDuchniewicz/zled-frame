@@ -52,13 +52,16 @@ The Zephyr kernel is derived from Wind River's commercial VxWorks Microkernel Pr
       // Example: Log the file name to the console
       console.log("Uploaded file:", file.name);
 
+	  // Create a FormData object
+      var formData = new FormData();
+
+      // Append the file to the FormData object
+      formData.append('file', file);
+
       // Add your processing logic here
 	  fetch('/api/image', {
 			method: 'POST',
-			headers: {
-			  'Content-Type': 'application/json',  // Adjust the content type as needed
-			},
-			body: JSON.stringify({ data: file }),
+			body: formData,
 	    })
 	    .then(response => response.json())
 	    .then(data => {
