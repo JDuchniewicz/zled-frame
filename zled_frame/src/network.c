@@ -10,10 +10,20 @@
 #define LOG_LEVEL LOG_LEVEL_DBG
 LOG_MODULE_REGISTER(networking); // TODO: how does it work?
 
+#if defined(CONFIG_NET_IPV4)
 K_THREAD_STACK_ARRAY_DEFINE(tcp4_handler_stack, CONFIG_NET_SAMPLE_NUM_HANDLERS,
 			    STACK_SIZE);
 static struct k_thread tcp4_handler_thread[CONFIG_NET_SAMPLE_NUM_HANDLERS];
 static k_tid_t tcp4_handler_tid[CONFIG_NET_SAMPLE_NUM_HANDLERS];
+#endif
+
+#if defined(CONFIG_NET_IPV6)
+// TODO: somehow in the original sample IPv6 is mandatory - otherwise we get a crash upon second HTTP request?
+K_THREAD_STACK_ARRAY_DEFINE(tcp6_handler_stack, CONFIG_NET_SAMPLE_NUM_HANDLERS,
+			    STACK_SIZE);
+static struct k_thread tcp6_handler_thread[CONFIG_NET_SAMPLE_NUM_HANDLERS];
+static k_tid_t tcp6_handler_tid[CONFIG_NET_SAMPLE_NUM_HANDLERS];
+#endif
 
 static struct net_mgmt_event_callback mgmt_cb;
 static bool connected;
@@ -21,13 +31,23 @@ K_SEM_DEFINE(run_app, 0, 1);
 K_SEM_DEFINE(quit_lock, 0, 1);
 static bool running_status;
 static bool want_to_quit;
+
 static int tcp4_listen_sock;
 static int tcp4_accepted[CONFIG_NET_SAMPLE_NUM_HANDLERS];
 
+static int tcp6_listen_sock;
+static int tcp6_accepted[CONFIG_NET_SAMPLE_NUM_HANDLERS];
+
 static void process_tcp4(void);
+static void process_tcp6(void);
 
 K_THREAD_DEFINE(tcp4_thread_id, STACK_SIZE,
 		process_tcp4, NULL, NULL, NULL,
+		THREAD_PRIORITY, 0, -1);
+
+
+K_THREAD_DEFINE(tcp6_thread_id, STACK_SIZE,
+		process_tcp6, NULL, NULL, NULL,
 		THREAD_PRIORITY, 0, -1);
 
 
@@ -103,6 +123,50 @@ static int setup(int *sock, struct sockaddr *bind_addr,
 	return ret;
 }
 
+// add the method + endpoint choosing method:
+
+typedef enum {
+    GET = 0,
+    POST,
+    UNKNOWN,
+} method_t;
+
+// TODO: endpoint choosing done properly - but do this later - first check the endpoint - integrate to my code and then build on top of that
+//
+// // TODO :how to handle multipackets
+
+static int parse_header(char *buf, int buf_size, char *endpoint, int endpoint_size, method_t * method)
+{
+    char *ptr = buf, *delim_pos = NULL;
+    int len = 0;
+    if (strstr(ptr, "GET")) {
+        *method = GET;
+        ptr += 4; // +1 for whitespace
+    } else if (strstr(ptr, "POST")) {
+        *method = POST;
+        ptr += 5;
+    } else {
+        LOG_ERR("Unknown method found!");
+        return -1;
+    }
+
+    delim_pos = strchr(ptr, ' ');
+    len = delim_pos - ptr;
+    if (len + 1 > endpoint_size) {
+        LOG_ERR("Too long endpoint name! Max allowed: %d", endpoint_size);
+        return -1;
+    }
+
+    strncpy(endpoint, ptr, len);
+    *(endpoint + len) = '\0'; // null-terminate it
+
+    LOG_DBG("Found method of type: %d with endpoint name: %s", *method, endpoint);
+
+    return 0;
+}
+
+/// here some basic address passing woult be necessary
+/// confirming - this is the proper place - all I now need is to extract the method name and register proper endpoints in my application - for starters hardcode it
 static void client_conn_handler(void *ptr1, void *ptr2, void *ptr3)
 {
 	ARG_UNUSED(ptr1);
@@ -113,13 +177,16 @@ static void client_conn_handler(void *ptr1, void *ptr2, void *ptr3)
 	int ret;
 	char buf[100];
 
+    // my things added for handling of the endpoints - TODO: refactor it later to be more composable
+    char endpoint_buf[20];
+    bool parsed_header = false;
+    method_t method;
+
 	client = *sock;
 
-	/* Discard HTTP request (or otherwise client will get
-	 * connection reset error).
-	 */
 	do {
 		received = recv(client, buf, sizeof(buf), 0);
+
 		if (received == 0) {
 			/* Connection closed */
 			LOG_DBG("[%d] Connection closed by peer", client);
@@ -131,6 +198,16 @@ static void client_conn_handler(void *ptr1, void *ptr2, void *ptr3)
 			break;
 		}
 
+        LOG_DBG("[%d] Received data: %.*s", client, received, buf);
+
+        if (!parsed_header) {
+            if (parse_header(buf, sizeof(buf), endpoint_buf, sizeof(endpoint_buf), &method) != 0) {
+                LOG_ERR("[%d] Could not parse header", client);
+                break;
+            }
+            parsed_header = true;
+        } // TODO: add sending the data to the proper endpoint later
+
 		/* Note that something like this strstr() check should *NOT*
 		 * be used in production code. This is done like this just
 		 * for this sample application to keep things simple.
@@ -138,8 +215,7 @@ static void client_conn_handler(void *ptr1, void *ptr2, void *ptr3)
 		 * We are assuming here that the full HTTP request is received
 		 * in one TCP segment which in real life might not.
 		 */
-        printf("Received buf: %s\n", buf);
-		if (strstr(buf, "\r\n\r\n")) {
+		if (strstr(buf, "\r\n\r\n")) { // TODO: how to check it received all data though?
 			break;
 		}
 	} while (true);
@@ -200,6 +276,22 @@ static int process_tcp(int *sock, int *accepted)
 
 	accepted[slot] = client;
 
+#if defined(CONFIG_NET_IPV6)
+	if (client_addr.sin6_family == AF_INET6) {
+		tcp6_handler_tid[slot] = k_thread_create(
+			&tcp6_handler_thread[slot],
+			tcp6_handler_stack[slot],
+			K_THREAD_STACK_SIZEOF(tcp6_handler_stack[slot]),
+			client_conn_handler,
+			INT_TO_POINTER(slot),
+			&accepted[slot],
+			&tcp6_handler_tid[slot],
+			THREAD_PRIORITY,
+			0, K_NO_WAIT);
+	}
+#endif
+
+#if defined(CONFIG_NET_IPV4)
 	if (client_addr.sin6_family == AF_INET) {
 		tcp4_handler_tid[slot] = k_thread_create(
 			&tcp4_handler_thread[slot],
@@ -212,6 +304,7 @@ static int process_tcp(int *sock, int *accepted)
 			THREAD_PRIORITY,
 			0, K_NO_WAIT);
 	}
+#endif
 
 	if (LOG_LEVEL >= LOG_LEVEL_DBG) {
 		char addr_str[INET6_ADDRSTRLEN];
@@ -254,13 +347,49 @@ static void process_tcp4(void)
 	}
 }
 
+static void process_tcp6(void)
+{
+	struct sockaddr_in6 addr6;
+	int ret;
+
+	(void)memset(&addr6, 0, sizeof(addr6));
+	addr6.sin6_family = AF_INET6;
+	addr6.sin6_port = htons(MY_PORT);
+
+	ret = setup(&tcp6_listen_sock, (struct sockaddr *)&addr6,
+		    sizeof(addr6));
+	if (ret < 0) {
+		return;
+	}
+
+	LOG_DBG("Waiting for IPv6 HTTP connections on port %d, sock %d",
+		MY_PORT, tcp6_listen_sock);
+
+	while (ret == 0 || !want_to_quit) {
+		ret = process_tcp(&tcp6_listen_sock, tcp6_accepted);
+		if (ret != 0) {
+			return;
+		}
+	}
+}
+
 void start_listener(void)
 {
 	int i;
 
 	for (i = 0; i < CONFIG_NET_SAMPLE_NUM_HANDLERS; i++) {
+#if defined(CONFIG_NET_IPV4)
 		tcp4_accepted[i] = -1;
 		tcp4_listen_sock = -1;
+#endif
+#if defined(CONFIG_NET_IPV6)
+		tcp6_accepted[i] = -1;
+		tcp6_listen_sock = -1;
+#endif
+	}
+
+	if (IS_ENABLED(CONFIG_NET_IPV6)) {
+		k_thread_start(tcp6_thread_id);
 	}
 
 	if (IS_ENABLED(CONFIG_NET_IPV4)) {
