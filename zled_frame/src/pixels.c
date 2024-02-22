@@ -89,14 +89,12 @@ int display_network_image(const struct device *const strip)
         LOG_ERR("Received image - semaphore taken"); // <- this should run as oneshot
         //  Copy the received image to the pixels array
         // print the received image
-        /*
         for (int i = 0; i < STRIP_NUM_PIXELS; i++)
         {
             LOG_ERR("Received image - pixel %d: %d %d %d", i, received_image[i * 3], received_image[i * 3 + 1], received_image[i * 3 + 2]);
             if (i % 16)
                 k_sleep(K_MSEC(3)); // sleep to prevent logs from being dropped
         }
-        */
         //  TODO: uncomment it only when I am sure the proper data is transferred
         //  memcpy(pixels, received_image, sizeof(pixels));
 

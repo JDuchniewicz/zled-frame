@@ -208,7 +208,7 @@ static int handle_endpoint(int client, char *endpoint_buf, method_t method, char
 		//LOG_ERR("Received data: %.*s", buf_len, buf);
 
 		if (read_header) 
-		{
+		{	
 			LOG_ERR("rcv_img_offset + buf_len: %d MAX_IMAGE_SIZE: %d", rcv_img_offset + buf_len, MAX_IMAGE_SIZE);
 			// for now this will inform that we handled all
 			if (rcv_img_offset + buf_len >= MAX_IMAGE_SIZE)
@@ -217,8 +217,10 @@ static int handle_endpoint(int client, char *endpoint_buf, method_t method, char
 				length = MAX_IMAGE_SIZE - rcv_img_offset;
 				if (length > 0)
 				{
-					strncpy(received_image + rcv_img_offset, buf, length);
-					LOG_ERR("Copied the rest of the data");
+					// this contains raw binary data - 0 is null terminator there :)
+					memcpy(received_image + rcv_img_offset, buf, length);
+					//strncpy(received_image + rcv_img_offset, buf, length);
+					//LOG_ERR("Copied the rest of the data");
 				}
 				// TODO: also skip the header part and only get the raw data
 				// TODO: where should it be placed?
@@ -235,9 +237,10 @@ static int handle_endpoint(int client, char *endpoint_buf, method_t method, char
 				return 0;
 			}
 
-			LOG_ERR("Position: %d", rcv_img_offset);
+			//LOG_ERR("Position: %d", rcv_img_offset);
 
-			strncpy(received_image + rcv_img_offset, buf, buf_len);
+			memcpy(received_image + rcv_img_offset, buf, buf_len);
+			//strncpy(received_image + rcv_img_offset, buf, buf_len);
 
 			rcv_img_offset += buf_len;
 			return -1;
@@ -255,10 +258,11 @@ static int handle_endpoint(int client, char *endpoint_buf, method_t method, char
 			// read the remainder as the image data
 			rcv_img_offset = 0;
 			length = buf_len - (pos - buf) - strlen(magic_number);
-			LOG_ERR("buf_len: %d pos - buf: %d strlen(magic_number): %d length: %d", buf_len, pos - buf, strlen(magic_number), length);
-			strncpy(received_image, pos + strlen(magic_number), length);
+			//LOG_ERR("buf_len: %d pos - buf: %d strlen(magic_number): %d length: %d", buf_len, pos - buf, strlen(magic_number), length);
+			memcpy(received_image, pos + strlen(magic_number), length);
+			//strncpy(received_image, pos + strlen(magic_number), length);
 			rcv_img_offset += length;
-			LOG_ERR("position: %d", rcv_img_offset);
+			//LOG_ERR("position: %d", rcv_img_offset);
 		}
 		LOG_ERR("Still parsing the header");
 		return -1;
