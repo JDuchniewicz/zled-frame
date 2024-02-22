@@ -56,6 +56,8 @@ static endpoint_t valid_endpoints[NUMBER_OF_ENDPOINTS] = {
 	{"/api/image", POST},
 };
 
+static const char *magic_number = "BADAB00D";
+
 char received_image[MAX_IMAGE_SIZE];
 static size_t rcv_img_offset;
 K_SEM_DEFINE(image_semaphore, 0, 1);
@@ -187,6 +189,7 @@ static int parse_header(char *buf, int buf_size, char *endpoint, int endpoint_si
 
 static int handle_endpoint(int client, char *endpoint_buf, method_t method, char *buf, int buf_len)
 {
+	//k_sleep(K_MSEC(1)); // TODO: make it cleaner
 	// GET /
 	if (strncmp(valid_endpoints[0].name, endpoint_buf, strlen(endpoint_buf)) == 0)
 	{
@@ -198,30 +201,66 @@ static int handle_endpoint(int client, char *endpoint_buf, method_t method, char
 	else if (strncmp(valid_endpoints[1].name, endpoint_buf, strlen(endpoint_buf)) == 0)
 	{
 		LOG_ERR("Handling POST /api/image");
+		static bool read_header = false;
+		uint8_t length = 0u;
 
-		// for now this will inform that we handled all
-		if (rcv_img_offset + buf_len >= MAX_IMAGE_SIZE)
+		// print buffer contents
+		//LOG_ERR("Received data: %.*s", buf_len, buf);
+
+		if (read_header) 
 		{
-			LOG_ERR("Stop accepting - Trying to send more data than Image can accept.");
-			// TODO: also skip the header part and only get the raw data
-			// TODO: where should it be placed?
-			rcv_img_offset = 0;
+			LOG_ERR("rcv_img_offset + buf_len: %d MAX_IMAGE_SIZE: %d", rcv_img_offset + buf_len, MAX_IMAGE_SIZE);
+			// for now this will inform that we handled all
+			if (rcv_img_offset + buf_len >= MAX_IMAGE_SIZE)
+			{
+				LOG_ERR("Stop accepting - Trying to send more data than Image can accept.");
+				length = MAX_IMAGE_SIZE - rcv_img_offset;
+				if (length > 0)
+				{
+					strncpy(received_image + rcv_img_offset, buf, length);
+					LOG_ERR("Copied the rest of the data");
+				}
+				// TODO: also skip the header part and only get the raw data
+				// TODO: where should it be placed?
+				rcv_img_offset = 0;
+				read_header = false;
 
-			// Give the semaphore to notify that a new image is ready
-			k_sem_give(&image_semaphore);
+				// Give the semaphore to notify that a new image is ready
+				k_sem_give(&image_semaphore);
 
-			// sleep a short amount so that the waiting thread can read the data - TODO: make it cleaner
-			k_sleep(K_MSEC(20));
-			// Wait for the image to be processed
-			k_sem_take(&image_semaphore, K_FOREVER);
-			return 0;
+				// sleep a short amount so that the waiting thread can read the data - TODO: make it cleaner
+				k_sleep(K_MSEC(20));
+				// Wait for the image to be processed
+				k_sem_take(&image_semaphore, K_FOREVER);
+				return 0;
+			}
+
+			LOG_ERR("Position: %d", rcv_img_offset);
+
+			strncpy(received_image + rcv_img_offset, buf, buf_len);
+
+			rcv_img_offset += buf_len;
+			return -1;
 		}
 
-		LOG_ERR("Position: %d", rcv_img_offset);
-
-		strncpy(received_image + rcv_img_offset, buf, buf_len);
-
-		rcv_img_offset += buf_len;
+		// until get the magic number, keep reading the header 0xBADAD00B
+		// there is a slight chance that the magic number will be split between two packets - but for now we don't handle it
+		// TODO: handle it later
+		char * pos = strstr(buf, magic_number);
+		if (pos) 
+		{
+			LOG_ERR("Found the magic number!");
+			read_header = true;
+			
+			// read the remainder as the image data
+			rcv_img_offset = 0;
+			length = buf_len - (pos - buf) - strlen(magic_number);
+			LOG_ERR("buf_len: %d pos - buf: %d strlen(magic_number): %d length: %d", buf_len, pos - buf, strlen(magic_number), length);
+			strncpy(received_image, pos + strlen(magic_number), length);
+			rcv_img_offset += length;
+			LOG_ERR("position: %d", rcv_img_offset);
+		}
+		LOG_ERR("Still parsing the header");
 		return -1;
 	}
 
