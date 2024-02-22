@@ -1,12 +1,21 @@
 HTTP/1.0 200 OK
 Content-Type: text/html; charset=utf-8
 
+<!DOCTYPE html>
 <html>
 <head>
 <style>
 body {
   background-color: #f3f5f6;
   font-family: "sans-serif";
+}
+.preview-container {
+  display: flex;
+  justify-content: space-between;
+}
+.preview {
+  width: 200px;
+  height: auto;
 }
 </style>
 </head>
@@ -39,42 +48,104 @@ The Zephyr kernel is derived from Wind River's commercial VxWorks Microkernel Pr
 </table>
 
 <input type="file" id="fileInput">
-<button onclick="processData()">Upload and Process</button>
+<button onclick="processImage()">Convert</button>
+<button onclick="uploadProcessedData()">Upload</button>
+
+<div class="preview-container">
+  <div class="preview" id="originalPreview">Original Image Preview</div>
+  <div class="preview" id="convertedPreview">Converted Image Preview</div>
+</div>
 
 <script>
-  function processData() {
-    var fileInput = document.getElementById('fileInput');
+let processedImage;
 
-    // Check if a file is selected
-    if (fileInput.files.length > 0) {
-      var file = fileInput.files[0];
+function processImage() {
+  var fileInput = document.getElementById('fileInput');
 
-      // Example: Log the file name to the console
-      console.log("Uploaded file:", file.name);
+  // Check if a file is selected
+  if (fileInput.files.length > 0) {
+    var file = fileInput.files[0];
 
-	  // Create a FormData object
-      var formData = new FormData();
+    // Read the file as a data URL
+    var reader = new FileReader();
+    reader.onload = function(event) {
+      var dataURL = event.target.result;
 
-      // Append the file to the FormData object
-      formData.append('file', file);
+      // Display the original image preview
+      var originalPreview = document.getElementById('originalPreview');
+      originalPreview.innerHTML = '<img src="' + dataURL + '" width="200" alt="Original Image"/>';
 
-      // Add your processing logic here
-	  fetch('/api/image', {
-			method: 'POST',
-			body: formData,
-	    })
-	    .then(response => response.json())
-	    .then(data => {
-			// Handle the server's response if needed
-			console.log('Server response:', data);
-	    })
-	    .catch(error => {
-			console.error('Error:', error);
-	    });
-    } else {
-      alert("Please select a file before processing.");
-    }
+      // Create an image element
+      var image = new Image();
+      image.onload = function() {
+        // Create a canvas element
+        var canvas = document.createElement('canvas');
+        canvas.width = 16;
+        canvas.height = 16;
+        var ctx = canvas.getContext('2d');
+
+        // Draw the image onto the canvas (resizing it to 16x16)
+        ctx.drawImage(image, 0, 0, 16, 16);
+
+        // Get the pixel data from the canvas
+        var imageData = ctx.getImageData(0, 0, 16, 16);
+        var pixelData = imageData.data;
+
+        // Create a Uint8Array to store the raw binary data
+        var binaryData = new Uint8Array(16 * 16 * 3);
+        for (var i = 0; i < pixelData.length; i += 4) {
+          binaryData[i] = pixelData[i];           // Red
+          binaryData[i + 1] = pixelData[i + 1];   // Green
+          binaryData[i + 2] = pixelData[i + 2];   // Blue
+        }
+
+        processedImage = binaryData;
+
+        // Display the converted image preview
+        var convertedPreview = document.getElementById('convertedPreview');
+        convertedPreview.innerHTML = '<img src="' + canvas.toDataURL() + '" width="200" alt="Converted Image"/>';
+
+        // Log the binary data to the console
+        console.log('Binary Data:', binaryData);
+      };
+
+      // Set the image source to the data URL
+      image.src = dataURL;
+    };
+
+    // Read the file as a data URL
+    reader.readAsDataURL(file);
+  } else {
+    alert("Please select a file before processing.");
   }
+}
+
+function uploadProcessedData() {
+  // Create a binary blob from the raw binary data
+  var blob = new Blob([processedImage]);
+
+  // Create a FormData object
+  var formData = new FormData();
+  formData.append('file', blob, 'processed_image.png');
+
+  // Add your server endpoint URL here
+  var endpointUrl = '/api/image';
+
+  // Upload data to server
+  fetch(endpointUrl, {
+    method: 'POST',
+    body: formData,
+  })
+  .then(response => response.json())
+  .then(data => {
+    // Handle server response if needed
+    console.log('Server response:', data);
+  })
+  .catch(error => {
+    console.error('Error:', error);
+  });
+}
 </script>
 
-</body></html>
+</body>
+</html>
