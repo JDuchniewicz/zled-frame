@@ -111,13 +111,15 @@ function processImage() {
         // Get the pixel data from the canvas
         var imageData = ctx.getImageData(0, 0, 16, 16);
         var pixelData = imageData.data;
+        console.log(pixelData);
 
         // Create a Uint8Array to store the raw binary data
         var binaryData = new Uint8Array(16 * 16 * 3);
-        for (var i = 0; i < pixelData.length; i += 4) {
-          binaryData[i] = pixelData[i];           // Red
-          binaryData[i + 1] = pixelData[i + 1];   // Green
-          binaryData[i + 2] = pixelData[i + 2];   // Blue
+        var newIdx = 0;
+        for (var i = 0; i < pixelData.length; i += 4, newIdx += 3) {
+          binaryData[newIdx] = pixelData[i];           // Red
+          binaryData[newIdx + 1] = pixelData[i + 1];   // Green
+          binaryData[newIdx + 2] = pixelData[i + 2];   // Blue
         }
 
         processedImage = binaryData;
